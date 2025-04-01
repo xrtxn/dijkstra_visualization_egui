@@ -6,6 +6,9 @@ let
       libGL
       libxkbcommon
       wayland
+      glib
+      cairo
+      pango
     ];
 in
 pkgs.mkShell {
@@ -13,6 +16,11 @@ pkgs.mkShell {
     pkg-config
     alsa-lib
     systemd.dev
+    cairo
+    gtk3
+    gdk-pixbuf
+    atk
+    pango
   ];
 
   LD_LIBRARY_PATH = libPath;

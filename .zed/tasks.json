@@ -4,8 +4,8 @@
     "command": "nix-shell --run 'cargo run'",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
-    "reveal": "never",
-    "hide": "never",
+    "reveal": "always",
+    "hide": "on_success",
     "shell": "system",
     "show_summary": true,
     "show_output": true

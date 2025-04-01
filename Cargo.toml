@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-egui-snarl = { version = "0.7.1" }
+egui-snarl = { version = "0.7.1", features = ["serde"] }
 env_logger = "0.11"
 egui = "0.31.1"
 eframe = "0.31.1"
 egui_extras = "0.31.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+rfd = "0.15.0"

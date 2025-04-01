@@ -1,12 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::{egui, App, CreationContext, NativeOptions};
+use eframe::{App, CreationContext, NativeOptions, egui};
 use egui_snarl::{
-    ui::{BackgroundPattern, Grid, PinInfo, SnarlPin, SnarlStyle, SnarlViewer, WireStyle}, InPin, OutPin, Snarl
+    InPin, NodeId, OutPin, Snarl,
+    ui::{BackgroundPattern, Grid, PinInfo, SnarlPin, SnarlStyle, SnarlViewer, WireStyle},
 };
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 // Define a simple node type
-#[derive(PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
 enum DijkstraNode {
     Start,
     Value(u32),
@@ -14,7 +17,29 @@ enum DijkstraNode {
 }
 
 // Implement the SnarlViewer trait to define how nodes are displayed and connected
-struct DijkstraViewer;
+struct DijkstraViewer {
+    highlighted_nodes: HashSet<NodeId>,
+}
+
+impl DijkstraViewer {
+    fn new() -> Self {
+        Self {
+            highlighted_nodes: HashSet::new(),
+        }
+    }
+
+    fn toggle_highlight(&mut self, node_id: NodeId) {
+        if self.highlighted_nodes.contains(&node_id) {
+            self.highlighted_nodes.remove(&node_id);
+        } else {
+            self.highlighted_nodes.insert(node_id);
+        }
+    }
+
+    fn is_highlighted(&self, node_id: NodeId) -> bool {
+        self.highlighted_nodes.contains(&node_id)
+    }
+}
 
 impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     fn title(&mut self, node: &DijkstraNode) -> String {
@@ -97,16 +122,40 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         snarl: &mut Snarl<DijkstraNode>,
     ) {
         ui.label("Add node");
-        if ui.button("Start").clicked() {
-            snarl.insert_node(pos, DijkstraNode::Start);
-            ui.close_menu();
+        if snarl.nodes().all(|node| *node != DijkstraNode::Start) {
+            if ui.button("Start").clicked() {
+                snarl.insert_node(pos, DijkstraNode::Start);
+                ui.close_menu();
+            }
         }
         if ui.button("Value").clicked() {
             snarl.insert_node(pos, DijkstraNode::Value(1));
             ui.close_menu();
         }
-        if ui.button("Finish").clicked() {
-            snarl.insert_node(pos, DijkstraNode::Finish);
+        if snarl.nodes().all(|node| *node != DijkstraNode::Finish) {
+            if ui.button("Finish").clicked() {
+                snarl.insert_node(pos, DijkstraNode::Finish);
+                ui.close_menu();
+            }
+        }
+    }
+
+    fn has_node_menu(&mut self, _node: &DijkstraNode) -> bool {
+        true
+    }
+
+    fn show_node_menu(
+        &mut self,
+        node: egui_snarl::NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        ui: &mut egui::Ui,
+        _scale: f32,
+        snarl: &mut Snarl<DijkstraNode>,
+    ) {
+        ui.label("Add node");
+        if ui.button("Remove").clicked() {
+            snarl.remove_node(node);
             ui.close_menu();
         }
     }
@@ -128,12 +177,38 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
             snarl.connect(from.id, to.id);
         }
     }
+
+    fn has_node_style(
+        &mut self,
+        node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        _snarl: &Snarl<DijkstraNode>,
+    ) -> bool {
+        self.is_highlighted(node)
+    }
+
+    fn apply_node_style(
+        &mut self,
+        style: &mut egui::Style,
+        _node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        _snarl: &Snarl<DijkstraNode>,
+    ) {
+        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(200, 100, 100);
+        style.visuals.widgets.noninteractive.fg_stroke =
+            egui::Stroke::new(1.0, egui::Color32::WHITE);
+        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(220, 120, 120);
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(210, 110, 110);
+    }
 }
 
 // Implement the eframe::App trait
 struct MyApp {
     snarl: Snarl<DijkstraNode>,
     style: SnarlStyle,
+    viewer: DijkstraViewer,
 }
 
 impl MyApp {
@@ -142,10 +217,14 @@ impl MyApp {
         ss.pin_placement = Some(egui_snarl::ui::PinPlacement::Edge);
         ss.wire_style = Some(WireStyle::Line);
         ss.max_scale = Some(1.0);
-        ss.bg_pattern = Some(BackgroundPattern::Grid(Grid::new(egui::vec2(30.0, 30.0), 0.0)));
+        ss.bg_pattern = Some(BackgroundPattern::Grid(Grid::new(
+            egui::vec2(30.0, 30.0),
+            0.0,
+        )));
         MyApp {
             snarl: Snarl::new(),
             style: ss,
+            viewer: DijkstraViewer::new(),
         }
     }
 }
@@ -153,27 +232,62 @@ impl MyApp {
 impl App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::SidePanel::left("controls").show(ctx, |ui| {
-            ui.label("Add node");
-            if ui.button("Start").clicked() && self.snarl.nodes().all(|node| *node != DijkstraNode::Start) {
-                self.snarl.insert_node(egui::Pos2::new(0.0, 0.0), DijkstraNode::Start);
+            if ui.button("Save").clicked() {
+                // Serialize the snarl data to a string using JSON
+                let serialized = serde_json::to_string_pretty(&self.snarl).unwrap_or_else(|err| {
+                    eprintln!("Failed to serialize snarl: {}", err);
+                    String::new()
+                });
+
+                // Save the serialized data to a file
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_file_name(".json")
+                    .add_filter("JSON", &["json"])
+                    .set_directory(&PathBuf::from("."))
+                    .save_file()
+                {
+                    std::fs::write(&path, serialized).unwrap_or_else(|err| {
+                        eprintln!("Failed to write to file: {}", err);
+                    });
+                }
+            }
+            if ui.button("Load").clicked() {
+                // Load the serialized data from a file
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_directory(&PathBuf::from("."))
+                    .pick_file()
+                {
+                    let serialized = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+                        eprintln!("Failed to read file: {}", err);
+                        String::new()
+                    });
+
+                    // Deserialize the snarl data from the string
+                    self.snarl = serde_json::from_str(&serialized).unwrap_or_else(|err| {
+                        eprintln!("Failed to deserialize snarl: {}", err);
+                        Snarl::new()
+                    });
+                }
             }
         });
         egui::Window::new("Kalkulátor").show(ctx, |ui| {
-            ui.label("Összeadás!");
-            if ui.button("Press me").clicked() {
-                for node in self.snarl.nodes() {
-                    match node {
-                        DijkstraNode::Value(value) => {
-                            println!("Value: {}", value);
-                        }
-                        _ => {}
-                    }
+            ui.label("Actions");
+            if ui.button("Toggle Node Styles").clicked() {
+                // Find value nodes and toggle their highlighting
+                for (node_id, _) in self.snarl.nodes_ids_data() {
+                    self.viewer.toggle_highlight(node_id);
+                }
+            }
+
+            if ui.button("Remove all").clicked() {
+                for (node_id, node) in self.snarl.clone().nodes_ids_data() {
+                    self.snarl.remove_node(node_id);
                 }
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.snarl
-                .show(&mut DijkstraViewer, &self.style, "salty", ui);
+            self.snarl.show(&mut self.viewer, &self.style, "salty", ui);
         });
     }
 }
