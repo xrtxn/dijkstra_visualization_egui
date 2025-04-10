@@ -187,7 +187,6 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     ) -> bool {
         true
     }
-
     fn apply_node_style(
         &mut self,
         style: &mut egui::Style,
@@ -196,18 +195,36 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         _outputs: &[OutPin],
         _snarl: &Snarl<DijkstraNode>,
     ) {
+        // Set node style based on highlight state
         if self.is_highlighted(node) {
-            style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(200, 100, 100);
-            style.visuals.widgets.noninteractive.fg_stroke =
-                egui::Stroke::new(1.0, egui::Color32::WHITE);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(220, 120, 120);
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(210, 110, 110);
+            style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(255, 0, 0);
+            // style.visuals.widgets.noninteractive.fg_stroke =
+            // egui::Stroke::new(1.0, egui::Color32::WHITE);
+            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(255, 0, 0);
+            // style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(210, 110, 110);
         } else {
-            style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(100, 100, 100);
-            style.visuals.widgets.noninteractive.fg_stroke =
-                egui::Stroke::new(1.0, egui::Color32::WHITE);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(120, 120, 120);
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(110, 110, 110);
+            // create basic a wire gradient for nodes input to output
+            // don't use the distance value
+            match _snarl[node] {
+                DijkstraNode::Start => {
+                    // Green color for start nodes
+                    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(50, 180, 50);
+                    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(70, 200, 70);
+                    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(90, 220, 90);
+                },
+                DijkstraNode::Distance(_) => {
+                    // Blue color for intermediate nodes
+                    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(50, 120, 200);
+                    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(70, 140, 220);
+                    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(90, 160, 240);
+                },
+                DijkstraNode::Finish => {
+                    // Orange color for end nodes
+                    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(220, 120, 50);
+                    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(240, 140, 70);
+                    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(255, 160, 90);
+                }
+            }
         }
     }
     fn final_node_rect(
@@ -222,14 +239,12 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         self.stored_nodes.insert(node, graph_rect);
         if self.stored_nodes.len() == snarl.nodes().count() {
             for (node_id, node_rect) in self.stored_nodes.iter() {
-                // println!("Node: {:?}", pos);
                 let op = InPinId {
                     node: *node_id,
                     input: 0,
                 };
                 // Végig megyünk minden bemeneti pin-en
                 for remote in snarl.in_pin(op).remotes {
-                    println!("Remote: {:?}", remote.node);
                     // Kiírjuk a távolságot
                     let parent_node_rect = self.stored_nodes.get(&remote.node);
                     if let Some(parent_node) = parent_node_rect {
@@ -238,13 +253,11 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                             .powi(2)
                             + (node_rect.left_center().y - parent_node.right_center().y).powi(2))
                         .sqrt();
-                        println!("Distance: {:?}", (dist.round() as i32) / 10);
                         // Beállítjuk a távolságot a csomópontban
                         snarl.get_node_info_mut(*node_id).unwrap().value =
                             DijkstraNode::Distance(vec![(dist.round() as i32) / 10]);
                     }
                 }
-                println!("--------------");
             }
         }
     }
