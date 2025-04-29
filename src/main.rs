@@ -7,9 +7,9 @@ use egui_snarl::{
     InPin, InPinId, NodeId, OutPin, OutPinId, Snarl,
     ui::{BackgroundPattern, Grid, PinInfo, SnarlPin, SnarlStyle, SnarlViewer, WireStyle},
 };
-use pathfinding::prelude::dijkstra;
 
-use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::time::Duration;
 
 const NOTIFICATION_DURATION: u64 = 5;
@@ -23,7 +23,6 @@ enum DijkstraNode {
 }
 
 struct DijkstraViewer {
-    highlighted_nodes: HashSet<NodeId>,
     stored_nodes: HashMap<NodeId, Rect>,
     toasts: Toasts,
     path_nodes: Vec<NodeId>,
@@ -32,23 +31,10 @@ struct DijkstraViewer {
 impl DijkstraViewer {
     fn new() -> Self {
         Self {
-            highlighted_nodes: HashSet::new(),
             stored_nodes: HashMap::new(),
             toasts: Toasts::default(),
             path_nodes: Vec::new(),
         }
-    }
-
-    fn toggle_highlight(&mut self, node_id: NodeId) {
-        if self.highlighted_nodes.contains(&node_id) {
-            self.highlighted_nodes.remove(&node_id);
-        } else {
-            self.highlighted_nodes.insert(node_id);
-        }
-    }
-
-    fn is_highlighted(&self, node_id: NodeId) -> bool {
-        self.highlighted_nodes.contains(&node_id) || self.path_nodes.contains(&node_id)
     }
 
     fn add_error_notification(&mut self, msg: impl Into<WidgetText>) {
@@ -264,6 +250,30 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     }
 }
 
+// Priority queue element for Dijkstra's algorithm
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct State {
+    cost: i32,
+    node: NodeId,
+}
+
+// Implement Ord for our priority queue
+impl Ord for State {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse order for min-heap
+        other
+            .cost
+            .cmp(&self.cost)
+            .then_with(|| self.node.cmp(&other.node))
+    }
+}
+
+impl PartialOrd for State {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 // Implement the eframe::App trait
 struct DijkstraApp {
     snarl: Snarl<DijkstraNode>,
@@ -306,38 +316,75 @@ impl DijkstraApp {
         let start = start_node.ok_or("Start node not found".to_string())?;
         let finish = finish_node.ok_or("Finish node not found".to_string())?;
 
-        // Build graph for pathfinding
-        let successors = |node_id: &NodeId| -> Vec<(NodeId, i32)> {
-            let mut result = Vec::new();
-            let op = OutPinId {
-                node: *node_id,
-                output: 0,
-            };
-            // if let Some(outpin) = self.snarl.out_pins(*node_id).get(0) {
+        // Manual implementation of Dijkstra's algorithm
+        let mut dist: HashMap<NodeId, i32> = HashMap::new();
+        let mut prev: HashMap<NodeId, NodeId> = HashMap::new();
+        let mut priority_queue = BinaryHeap::new();
+
+        // Initialize distances to infinity (i32::MAX)
+        for (node_id, _) in self.snarl.nodes_ids_data() {
+            dist.insert(node_id, i32::MAX);
+        }
+
+        // Distance to start node is 0
+        dist.insert(start, 0);
+        priority_queue.push(State {
+            cost: 0,
+            node: start,
+        });
+
+        // Process nodes
+        while let Some(State { cost, node }) = priority_queue.pop() {
+            // If we reached the target node, we're done
+            if node == finish {
+                break;
+            }
+
+            // Skip if we already found a better path
+            if cost > dist[&node] {
+                continue;
+            }
+
+            // For each neighbor of the current node
+            let op = OutPinId { node, output: 0 };
+
             for remote in self.snarl.out_pin(op).remotes {
-                let cost = match self.snarl[remote.node] {
+                let edge_cost = match self.snarl[remote.node] {
                     DijkstraNode::Distance(cost) => cost,
                     _ => 0, // Default cost for other node types
                 };
-                result.push((remote.node, cost));
-            }
-            result
-        };
 
-        // Use pathfinding crate's dijkstra algorithm
-        let result = dijkstra(
-            &start,
-            |node_id| successors(node_id),
-            |&node_id| node_id == finish,
-        );
+                let next = State {
+                    cost: cost + edge_cost,
+                    node: remote.node,
+                };
 
-        match result {
-            Some((path, total_cost)) => {
-                self.viewer
-                    .add_success_notification(format!("Path found! Total cost: {}", total_cost));
-                Ok(path)
+                // If we found a better path
+                if next.cost < dist[&remote.node] {
+                    dist.insert(remote.node, next.cost);
+                    prev.insert(remote.node, node);
+                    priority_queue.push(next);
+                }
             }
-            None => Err("No path found".to_string()),
+        }
+
+        // Reconstruct the path if one exists
+        if prev.contains_key(&finish) || finish == start {
+            let mut path = Vec::new();
+            let mut current = finish;
+            path.push(current);
+
+            while current != start {
+                current = prev[&current];
+                path.insert(0, current);
+            }
+
+            let total_cost = dist[&finish];
+            self.viewer
+                .add_success_notification(format!("Path found! Total cost: {}", total_cost));
+            Ok(path)
+        } else {
+            Err("No path found".to_string())
         }
     }
 }
