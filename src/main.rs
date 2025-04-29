@@ -4,14 +4,15 @@ use eframe::{App as EframeApp, CreationContext, NativeOptions, egui};
 use egui::{Color32, Rect, WidgetText};
 use egui_notify::Toasts;
 use egui_snarl::{
-    InPin, InPinId, NodeId, OutPin, Snarl,
+    InPin, InPinId, NodeId, OutPin, OutPinId, Snarl,
     ui::{BackgroundPattern, Grid, PinInfo, SnarlPin, SnarlStyle, SnarlViewer, WireStyle},
 };
+use pathfinding::prelude::dijkstra;
 
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-const ERROR_DURATION: u64 = 5;
+const NOTIFICATION_DURATION: u64 = 5;
 
 // Define a simple node type
 #[derive(PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -25,6 +26,7 @@ struct DijkstraViewer {
     highlighted_nodes: HashSet<NodeId>,
     stored_nodes: HashMap<NodeId, Rect>,
     toasts: Toasts,
+    path_nodes: Vec<NodeId>,
 }
 
 impl DijkstraViewer {
@@ -33,6 +35,7 @@ impl DijkstraViewer {
             highlighted_nodes: HashSet::new(),
             stored_nodes: HashMap::new(),
             toasts: Toasts::default(),
+            path_nodes: Vec::new(),
         }
     }
 
@@ -45,13 +48,19 @@ impl DijkstraViewer {
     }
 
     fn is_highlighted(&self, node_id: NodeId) -> bool {
-        self.highlighted_nodes.contains(&node_id)
+        self.highlighted_nodes.contains(&node_id) || self.path_nodes.contains(&node_id)
     }
 
     fn add_error_notification(&mut self, msg: impl Into<WidgetText>) {
         self.toasts
             .error(msg)
-            .duration(Some(Duration::from_secs(ERROR_DURATION)));
+            .duration(Some(Duration::from_secs(NOTIFICATION_DURATION)));
+    }
+
+    fn add_success_notification(&mut self, msg: impl Into<WidgetText>) {
+        self.toasts
+            .success(msg)
+            .duration(Some(Duration::from_secs(NOTIFICATION_DURATION)));
     }
 }
 
@@ -59,7 +68,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     fn title(&mut self, node: &DijkstraNode) -> String {
         match node {
             DijkstraNode::Start => "Start".to_string(),
-            DijkstraNode::Distance(_) => "Distance".to_string(),
+            DijkstraNode::Distance(cost) => format!("Distance ({})", cost),
             DijkstraNode::Finish => "Finish".to_string(),
         }
     }
@@ -82,8 +91,14 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         match &snarl[pin.id.node] {
             DijkstraNode::Start => PinInfo::default(),
             DijkstraNode::Distance(values) => {
-                ui.label(format!("Values: {:?}", values));
-                PinInfo::triangle().with_fill(Color32::GREEN)
+                let color: Color32;
+                if self.path_nodes.contains(&pin.id.node) {
+                    color = Color32::RED;
+                } else {
+                    color = Color32::BLUE;
+                }
+                ui.label(format!("Cost: {:?}", values));
+                PinInfo::triangle().with_fill(color)
             }
             _ => PinInfo::default(),
         }
@@ -105,7 +120,15 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         snarl: &mut Snarl<DijkstraNode>,
     ) -> impl SnarlPin + 'static {
         match &snarl[pin.id.node] {
-            DijkstraNode::Distance(_) => PinInfo::circle().with_fill(Color32::RED),
+            DijkstraNode::Distance(_) => {
+                let color: Color32;
+                if self.path_nodes.contains(&pin.id.node) {
+                    color = Color32::RED;
+                } else {
+                    color = Color32::BLUE;
+                }
+                PinInfo::circle().with_fill(color)
+            }
             _ => PinInfo::default(),
         }
     }
@@ -153,11 +176,27 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         _scale: f32,
         snarl: &mut Snarl<DijkstraNode>,
     ) {
-        ui.label("Add node");
+        ui.label("Node Options");
         if ui.button("Remove").clicked() {
             self.stored_nodes.remove(&node);
             snarl.remove_node(node);
             ui.close_menu();
+        }
+
+        match &snarl[node].clone() {
+            DijkstraNode::Distance(cost) => {
+                if ui.button("Increase Cost").clicked() {
+                    let new_cost = cost + 1;
+                    snarl.get_node_info_mut(node).unwrap().value = DijkstraNode::Distance(new_cost);
+                    ui.close_menu();
+                }
+                if ui.button("Decrease Cost").clicked() && *cost > 1 {
+                    let new_cost = cost - 1;
+                    snarl.get_node_info_mut(node).unwrap().value = DijkstraNode::Distance(new_cost);
+                    ui.close_menu();
+                }
+            }
+            _ => {}
         }
     }
 
@@ -177,28 +216,6 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         {
             snarl.connect(from.id, to.id);
         }
-    }
-
-    fn has_node_style(
-        &mut self,
-        node: NodeId,
-        _inputs: &[InPin],
-        _outputs: &[OutPin],
-        _snarl: &Snarl<DijkstraNode>,
-    ) -> bool {
-        self.is_highlighted(node)
-    }
-
-    fn apply_node_style(
-        &mut self,
-        style: &mut egui::Style,
-        _node: NodeId,
-        _inputs: &[InPin],
-        _outputs: &[OutPin],
-        _snarl: &Snarl<DijkstraNode>,
-    ) {
-        style.visuals.widgets.active.bg_fill = egui::Color32::BLUE;
-        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::BLUE;
     }
 
     fn final_node_rect(
@@ -236,6 +253,9 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                         .sqrt();
                         // Beállítjuk a távolságot a csomópontban
                         v = (dist.round() as i32) / 10;
+                        if v < 1 {
+                            v = 1;
+                        }
                     }
                 }
                 snarl.get_node_info_mut(*node_id).unwrap().value = DijkstraNode::Distance(v);
@@ -267,6 +287,57 @@ impl DijkstraApp {
             snarl: Snarl::new(),
             style: ss,
             viewer: DijkstraViewer::new(),
+        }
+    }
+
+    fn run_dijkstra(&mut self) -> Result<Vec<NodeId>, String> {
+        let mut start_node = None;
+        let mut finish_node = None;
+
+        // Find start and finish nodes
+        for (node_id, node) in self.snarl.nodes_ids_data() {
+            match node.value {
+                DijkstraNode::Start => start_node = Some(node_id),
+                DijkstraNode::Finish => finish_node = Some(node_id),
+                _ => {}
+            }
+        }
+
+        let start = start_node.ok_or("Start node not found".to_string())?;
+        let finish = finish_node.ok_or("Finish node not found".to_string())?;
+
+        // Build graph for pathfinding
+        let successors = |node_id: &NodeId| -> Vec<(NodeId, i32)> {
+            let mut result = Vec::new();
+            let op = OutPinId {
+                node: *node_id,
+                output: 0,
+            };
+            // if let Some(outpin) = self.snarl.out_pins(*node_id).get(0) {
+            for remote in self.snarl.out_pin(op).remotes {
+                let cost = match self.snarl[remote.node] {
+                    DijkstraNode::Distance(cost) => cost,
+                    _ => 0, // Default cost for other node types
+                };
+                result.push((remote.node, cost));
+            }
+            result
+        };
+
+        // Use pathfinding crate's dijkstra algorithm
+        let result = dijkstra(
+            &start,
+            |node_id| successors(node_id),
+            |&node_id| node_id == finish,
+        );
+
+        match result {
+            Some((path, total_cost)) => {
+                self.viewer
+                    .add_success_notification(format!("Path found! Total cost: {}", total_cost));
+                Ok(path)
+            }
+            None => Err("No path found".to_string()),
         }
     }
 }
@@ -319,6 +390,18 @@ impl EframeApp for DijkstraApp {
                     });
                 }
             }
+
+            if ui.button("Run Dijkstra Algorithm").clicked() {
+                self.viewer.path_nodes.clear();
+                match self.run_dijkstra() {
+                    Ok(path) => {
+                        self.viewer.path_nodes = path;
+                    }
+                    Err(err) => {
+                        self.viewer.add_error_notification(err);
+                    }
+                }
+            }
         });
 
         egui::Window::new("Kalkulátor").show(ctx, |ui| {
@@ -334,6 +417,11 @@ impl EframeApp for DijkstraApp {
                     self.viewer.stored_nodes.remove(&node_id);
                     self.snarl.remove_node(node_id);
                 }
+                self.viewer.path_nodes.clear();
+            }
+
+            if ui.button("Clear Dijkstra Path").clicked() {
+                self.viewer.path_nodes.clear();
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
