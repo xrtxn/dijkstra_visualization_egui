@@ -1,24 +1,30 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use eframe::{App as EframeApp, CreationContext, NativeOptions, egui};
-use egui::Rect;
+use egui::{Color32, Rect, WidgetText};
+use egui_notify::Toasts;
 use egui_snarl::{
     InPin, InPinId, NodeId, OutPin, Snarl,
     ui::{BackgroundPattern, Grid, PinInfo, SnarlPin, SnarlStyle, SnarlViewer, WireStyle},
 };
+
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
+const ERROR_DURATION: u64 = 5;
 
 // Define a simple node type
 #[derive(PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
 enum DijkstraNode {
     Start,
-    Distance(Vec<i32>),
+    Distance(i32),
     Finish,
 }
 
 struct DijkstraViewer {
     highlighted_nodes: HashSet<NodeId>,
     stored_nodes: HashMap<NodeId, Rect>,
+    toasts: Toasts,
 }
 
 impl DijkstraViewer {
@@ -26,6 +32,7 @@ impl DijkstraViewer {
         Self {
             highlighted_nodes: HashSet::new(),
             stored_nodes: HashMap::new(),
+            toasts: Toasts::default(),
         }
     }
 
@@ -39,6 +46,12 @@ impl DijkstraViewer {
 
     fn is_highlighted(&self, node_id: NodeId) -> bool {
         self.highlighted_nodes.contains(&node_id)
+    }
+
+    fn add_error_notification(&mut self, msg: impl Into<WidgetText>) {
+        self.toasts
+            .error(msg)
+            .duration(Some(Duration::from_secs(ERROR_DURATION)));
     }
 }
 
@@ -66,21 +79,11 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         _scale: f32,
         snarl: &mut Snarl<DijkstraNode>,
     ) -> impl SnarlPin + 'static {
-        match snarl[pin.id.node] {
-            DijkstraNode::Start => {
-                if let Some(remote) = pin.remotes.iter().next() {
-                    match &snarl[remote.node] {
-                        DijkstraNode::Distance(values) => {
-                            ui.label(format!("Values: {:?}", values));
-                        }
-                        _ => {
-                            ui.label("Invalid input");
-                        }
-                    }
-                } else {
-                    ui.label("No input");
-                }
-                PinInfo::default()
+        match &snarl[pin.id.node] {
+            DijkstraNode::Start => PinInfo::default(),
+            DijkstraNode::Distance(values) => {
+                ui.label(format!("Values: {:?}", values));
+                PinInfo::triangle().with_fill(Color32::GREEN)
             }
             _ => PinInfo::default(),
         }
@@ -97,15 +100,12 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     fn show_output(
         &mut self,
         pin: &OutPin,
-        ui: &mut egui::Ui,
+        _ui: &mut egui::Ui,
         _scale: f32,
         snarl: &mut Snarl<DijkstraNode>,
     ) -> impl SnarlPin + 'static {
         match &snarl[pin.id.node] {
-            DijkstraNode::Distance(values) => {
-                ui.label(format!("Values: {:?}", values));
-                PinInfo::default()
-            }
+            DijkstraNode::Distance(_) => PinInfo::circle().with_fill(Color32::RED),
             _ => PinInfo::default(),
         }
     }
@@ -129,7 +129,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
             }
         }
         if ui.button("Value").clicked() {
-            snarl.insert_node(pos, DijkstraNode::Distance(vec![1]));
+            snarl.insert_node(pos, DijkstraNode::Distance(1));
             ui.close_menu();
         }
         if snarl.nodes().all(|node| *node != DijkstraNode::Finish) {
@@ -155,6 +155,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     ) {
         ui.label("Add node");
         if ui.button("Remove").clicked() {
+            self.stored_nodes.remove(&node);
             snarl.remove_node(node);
             ui.close_menu();
         }
@@ -180,53 +181,26 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
 
     fn has_node_style(
         &mut self,
-        _node: NodeId,
-        _inputs: &[InPin],
-        _outputs: &[OutPin],
-        _snarl: &Snarl<DijkstraNode>,
-    ) -> bool {
-        true
-    }
-    fn apply_node_style(
-        &mut self,
-        style: &mut egui::Style,
         node: NodeId,
         _inputs: &[InPin],
         _outputs: &[OutPin],
         _snarl: &Snarl<DijkstraNode>,
-    ) {
-        // Set node style based on highlight state
-        if self.is_highlighted(node) {
-            style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(255, 0, 0);
-            // style.visuals.widgets.noninteractive.fg_stroke =
-            // egui::Stroke::new(1.0, egui::Color32::WHITE);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(255, 0, 0);
-            // style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(210, 110, 110);
-        } else {
-            // create basic a wire gradient for nodes input to output
-            // don't use the distance value
-            match _snarl[node] {
-                DijkstraNode::Start => {
-                    // Green color for start nodes
-                    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(50, 180, 50);
-                    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(70, 200, 70);
-                    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(90, 220, 90);
-                },
-                DijkstraNode::Distance(_) => {
-                    // Blue color for intermediate nodes
-                    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(50, 120, 200);
-                    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(70, 140, 220);
-                    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(90, 160, 240);
-                },
-                DijkstraNode::Finish => {
-                    // Orange color for end nodes
-                    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(220, 120, 50);
-                    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(240, 140, 70);
-                    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(255, 160, 90);
-                }
-            }
-        }
+    ) -> bool {
+        self.is_highlighted(node)
     }
+
+    fn apply_node_style(
+        &mut self,
+        style: &mut egui::Style,
+        _node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        _snarl: &Snarl<DijkstraNode>,
+    ) {
+        style.visuals.widgets.active.bg_fill = egui::Color32::BLUE;
+        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::BLUE;
+    }
+
     fn final_node_rect(
         &mut self,
         node: NodeId,
@@ -238,11 +212,18 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     ) {
         self.stored_nodes.insert(node, graph_rect);
         if self.stored_nodes.len() == snarl.nodes().count() {
+            //végig megyünk minden úton
             for (node_id, node_rect) in self.stored_nodes.iter() {
+                match snarl[*node_id] {
+                    DijkstraNode::Start => continue,
+                    DijkstraNode::Finish => continue,
+                    _ => (),
+                }
                 let op = InPinId {
                     node: *node_id,
                     input: 0,
                 };
+                let mut v = 1;
                 // Végig megyünk minden bemeneti pin-en
                 for remote in snarl.in_pin(op).remotes {
                     // Kiírjuk a távolságot
@@ -251,13 +232,13 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                         let dist: f32 = ((node_rect.left_center().x
                             - parent_node.right_center().x)
                             .powi(2)
-                            + (node_rect.left_center().y - parent_node.right_center().y).powi(2))
+                            + (node_rect.left_bottom().y - parent_node.right_center().y).powi(2))
                         .sqrt();
                         // Beállítjuk a távolságot a csomópontban
-                        snarl.get_node_info_mut(*node_id).unwrap().value =
-                            DijkstraNode::Distance(vec![(dist.round() as i32) / 10]);
+                        v = (dist.round() as i32) / 10;
                     }
                 }
+                snarl.get_node_info_mut(*node_id).unwrap().value = DijkstraNode::Distance(v);
             }
         }
     }
@@ -292,11 +273,13 @@ impl DijkstraApp {
 
 impl EframeApp for DijkstraApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.viewer.toasts.show(ctx);
         egui::SidePanel::left("controls").show(ctx, |ui| {
             if ui.button("Save").clicked() {
                 // Serialize the snarl data to a string using JSON
                 let serialized = serde_json::to_string_pretty(&self.snarl).unwrap_or_else(|err| {
-                    eprintln!("Failed to serialize snarl: {}", err);
+                    self.viewer
+                        .add_error_notification(format!("Failed to serialize data: {}", err));
                     String::new()
                 });
 
@@ -308,7 +291,8 @@ impl EframeApp for DijkstraApp {
                     .save_file()
                 {
                     std::fs::write(&path, serialized).unwrap_or_else(|err| {
-                        eprintln!("Failed to write to file: {}", err);
+                        self.viewer
+                            .add_error_notification(format!("Failed to save route: {}", err));
                     });
                 }
             }
@@ -320,18 +304,23 @@ impl EframeApp for DijkstraApp {
                     .pick_file()
                 {
                     let serialized = std::fs::read_to_string(&path).unwrap_or_else(|err| {
-                        eprintln!("Failed to read file: {}", err);
+                        self.viewer
+                            .add_error_notification(format!("Failed to read file: {}", err));
                         String::new()
                     });
 
                     // Deserialize the snarl data from the string
                     self.snarl = serde_json::from_str(&serialized).unwrap_or_else(|err| {
-                        eprintln!("Failed to deserialize snarl: {}", err);
+                        self.viewer.add_error_notification(format!(
+                            "Failed to deserialize snarl: {}",
+                            err
+                        ));
                         Snarl::new()
                     });
                 }
             }
         });
+
         egui::Window::new("Kalkulátor").show(ctx, |ui| {
             ui.label("Actions");
             if ui.button("Toggle Node Styles").clicked() {
@@ -342,13 +331,8 @@ impl EframeApp for DijkstraApp {
             }
             if ui.button("Remove all").clicked() {
                 for (node_id, _) in self.snarl.clone().nodes_ids_data() {
+                    self.viewer.stored_nodes.remove(&node_id);
                     self.snarl.remove_node(node_id);
-                }
-            }
-            if ui.button("Calc distance").clicked() {
-                for (pos, node) in self.snarl.clone().nodes_pos() {
-                    println!("Node: {:?}", pos);
-                    println!("Node: {:?}", node);
                 }
             }
         });
