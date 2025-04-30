@@ -9,7 +9,7 @@ use egui_snarl::{
 };
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 use std::time::Duration;
 
 const NOTIFICATION_DURATION: u64 = 5;
@@ -168,22 +168,6 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
             snarl.remove_node(node);
             ui.close_menu();
         }
-
-        match &snarl[node].clone() {
-            DijkstraNode::Distance(cost) => {
-                if ui.button("Increase Cost").clicked() {
-                    let new_cost = cost + 1;
-                    snarl.get_node_info_mut(node).unwrap().value = DijkstraNode::Distance(new_cost);
-                    ui.close_menu();
-                }
-                if ui.button("Decrease Cost").clicked() && *cost > 1 {
-                    let new_cost = cost - 1;
-                    snarl.get_node_info_mut(node).unwrap().value = DijkstraNode::Distance(new_cost);
-                    ui.close_menu();
-                }
-            }
-            _ => {}
-        }
     }
 
     fn connect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<DijkstraNode>) {
@@ -195,7 +179,10 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         if let (DijkstraNode::Distance(_), DijkstraNode::Distance(_)) =
             (&snarl[from.id.node], &snarl[to.id.node])
         {
-            snarl.connect(from.id, to.id);
+            // Check if the target input pin already has a connection
+            if snarl.in_pin(to.id).remotes.is_empty() {
+                snarl.connect(from.id, to.id);
+            }
         }
         if let (DijkstraNode::Distance(_), DijkstraNode::Finish) =
             (&snarl[from.id.node], &snarl[to.id.node])
@@ -437,6 +424,21 @@ impl EframeApp for DijkstraApp {
                     });
                 }
             }
+        });
+
+        egui::Window::new("Kalkulátor").show(ctx, |ui| {
+            ui.label("Actions");
+            if ui.button("Remove all").clicked() {
+                for (node_id, _) in self.snarl.clone().nodes_ids_data() {
+                    self.viewer.stored_nodes.remove(&node_id);
+                    self.snarl.remove_node(node_id);
+                }
+                self.viewer.path_nodes.clear();
+            }
+
+            if ui.button("Clear Dijkstra Path").clicked() {
+                self.viewer.path_nodes.clear();
+            }
 
             if ui.button("Run Dijkstra Algorithm").clicked() {
                 self.viewer.path_nodes.clear();
@@ -448,27 +450,6 @@ impl EframeApp for DijkstraApp {
                         self.viewer.add_error_notification(err);
                     }
                 }
-            }
-        });
-
-        egui::Window::new("Kalkulátor").show(ctx, |ui| {
-            ui.label("Actions");
-            if ui.button("Toggle Node Styles").clicked() {
-                // Find value nodes and toggle their highlighting
-                for (node_id, _) in self.snarl.nodes_ids_data() {
-                    self.viewer.toggle_highlight(node_id);
-                }
-            }
-            if ui.button("Remove all").clicked() {
-                for (node_id, _) in self.snarl.clone().nodes_ids_data() {
-                    self.viewer.stored_nodes.remove(&node_id);
-                    self.snarl.remove_node(node_id);
-                }
-                self.viewer.path_nodes.clear();
-            }
-
-            if ui.button("Clear Dijkstra Path").clicked() {
-                self.viewer.path_nodes.clear();
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
