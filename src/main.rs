@@ -18,7 +18,7 @@ const NOTIFICATION_DURATION: u64 = 5;
 #[derive(PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
 enum DijkstraNode {
     Start,
-    Distance(i32),
+    Distance(HashMap<NodeId, i32>),
     Finish(HashMap<NodeId, i32>),
 }
 
@@ -62,8 +62,8 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     fn inputs(&mut self, node: &DijkstraNode) -> usize {
         match node {
             DijkstraNode::Start => 0,
-            DijkstraNode::Distance(_) => 1,
-            DijkstraNode::Finish(_) => 1,
+            DijkstraNode::Distance(_) => 1, // Allow multiple inputs
+            DijkstraNode::Finish(_) => 1,   // Allow multiple inputs
         }
     }
 
@@ -75,7 +75,6 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         snarl: &mut Snarl<DijkstraNode>,
     ) -> impl SnarlPin + 'static {
         match &snarl[pin.id.node] {
-            DijkstraNode::Start => PinInfo::default(),
             DijkstraNode::Distance(values) => {
                 let color: Color32;
                 if self.path_nodes.contains(&pin.id.node) {
@@ -83,7 +82,19 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                 } else {
                     color = Color32::BLUE;
                 }
-                ui.label(format!("Cost: {:?}", values));
+
+                // Display all remote nodes and their costs
+                if !snarl.in_pin(pin.id).remotes.is_empty() {
+                    ui.vertical(|ui| {
+                        for remote in &snarl.in_pin(pin.id).remotes {
+                            let remote_node = remote.node;
+                            if let Some(&cost) = values.get(&remote_node) {
+                                ui.label(format!("Node {}: cost {}", remote_node.0, cost));
+                            }
+                        }
+                    });
+                }
+
                 PinInfo::triangle().with_fill(color)
             }
             DijkstraNode::Finish(hash_map) => {
@@ -93,15 +104,16 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                         break;
                     }
                 }
-                PinInfo::default()
+                PinInfo::triangle()
             }
+            DijkstraNode::Start => unreachable!(),
         }
     }
 
     fn outputs(&mut self, node: &DijkstraNode) -> usize {
         match node {
-            DijkstraNode::Start => 1,
-            DijkstraNode::Distance(_) => 1,
+            DijkstraNode::Start => 1,       // Allow multiple outputs
+            DijkstraNode::Distance(_) => 1, // Allow multiple outputs
             DijkstraNode::Finish(_) => 0,
         }
     }
@@ -149,7 +161,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
             }
         }
         if ui.button("Value").clicked() {
-            snarl.insert_node(pos, DijkstraNode::Distance(1));
+            snarl.insert_node(pos, DijkstraNode::Distance(HashMap::new()));
             ui.close_menu();
         }
         if snarl.nodes().all(|node| match node {
@@ -185,23 +197,19 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     }
 
     fn connect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<DijkstraNode>) {
-        if let (DijkstraNode::Start, DijkstraNode::Distance(_)) =
-            (&snarl[from.id.node], &snarl[to.id.node])
-        {
-            snarl.connect(from.id, to.id);
-        }
-        if let (DijkstraNode::Distance(_), DijkstraNode::Distance(_)) =
-            (&snarl[from.id.node], &snarl[to.id.node])
-        {
-            // Check if the target input pin already has a connection
-            if snarl.in_pin(to.id).remotes.is_empty() {
+        // Allow all valid connections
+        match (&snarl[from.id.node], &snarl[to.id.node]) {
+            (DijkstraNode::Start, DijkstraNode::Distance(_)) => {
                 snarl.connect(from.id, to.id);
             }
-        }
-        if let (DijkstraNode::Distance(_), DijkstraNode::Finish(_)) =
-            (&snarl[from.id.node], &snarl[to.id.node])
-        {
-            snarl.connect(from.id, to.id);
+            (DijkstraNode::Distance(_), DijkstraNode::Distance(_)) => {
+                // Allow connections between distance nodes
+                snarl.connect(from.id, to.id);
+            }
+            (DijkstraNode::Distance(_), DijkstraNode::Finish(_)) => {
+                snarl.connect(from.id, to.id);
+            }
+            _ => {}
         }
     }
 
@@ -216,41 +224,78 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     ) {
         self.stored_nodes.insert(node, graph_rect);
         if self.stored_nodes.len() == snarl.nodes().count() {
-            //végig megyünk minden úton
-            'routes: for (node_id, node_rect) in self.stored_nodes.iter() {
-                let ip = InPinId {
-                    node: *node_id,
-                    input: 0,
-                };
-                let mut v = 1;
-                // Végig megyünk minden bemeneti pin-en
-                for remote in snarl.in_pin(ip).remotes {
-                    // Kiírjuk a távolságot
-                    let parent_node_rect = self.stored_nodes.get(&remote.node);
-                    if let Some(parent_node) = parent_node_rect {
-                        let dist: f32 = ((node_rect.left_center().x
-                            - parent_node.right_center().x)
-                            .powi(2)
-                            + (node_rect.left_center().y - parent_node.right_center().y).powi(2))
-                        .sqrt();
-                        // Beállítjuk a távolságot a csomópontban
-                        v = (dist.round() as i32) / 10;
-                        if v < 1 {
-                            v = 1;
+            // Update all connections with distances
+            for (node_id, node_rect) in self.stored_nodes.iter() {
+                match &snarl[*node_id] {
+                    DijkstraNode::Start => {}
+                    DijkstraNode::Distance(_) => {
+                        let mut costs = HashMap::new();
+                        // Check all inputs to this node
+                        for input_idx in 0..10 {
+                            // Check all possible input pins
+                            let ip = InPinId {
+                                node: *node_id,
+                                input: input_idx,
+                            };
+
+                            // For each connected input, calculate distance
+                            for remote in snarl.in_pin(ip).remotes.iter() {
+                                let parent_node_rect = self.stored_nodes.get(&remote.node);
+                                if let Some(parent_node) = parent_node_rect {
+                                    let dist: f32 = ((node_rect.left_center().x
+                                        - parent_node.right_center().x)
+                                        .powi(2)
+                                        + (node_rect.left_center().y
+                                            - parent_node.right_center().y)
+                                            .powi(2))
+                                    .sqrt();
+
+                                    // Calculate cost from distance
+                                    let cost = (dist.round() as i32) / 10;
+                                    costs.insert(remote.node, if cost < 1 { 1 } else { cost });
+                                }
+                            }
+                        }
+
+                        // Update the node with all costs
+                        if !costs.is_empty() {
+                            snarl.get_node_info_mut(*node_id).unwrap().value =
+                                DijkstraNode::Distance(costs);
                         }
                     }
-                    match &snarl[*node_id] {
-                        DijkstraNode::Finish(hash_map) => {
-                            // Kiírjuk a távolságot
-                            let mut new_hash_map = hash_map.clone();
-                            new_hash_map.insert(remote.node, v);
-                            snarl.get_node_info_mut(*node_id).unwrap().value =
-                                DijkstraNode::Finish(new_hash_map);
+                    DijkstraNode::Finish(_) => {
+                        let mut costs = HashMap::new();
+                        // Check all inputs to this node
+                        for input_idx in 0..10 {
+                            // Check all possible input pins
+                            let ip = InPinId {
+                                node: *node_id,
+                                input: input_idx,
+                            };
+
+                            // For each connected input, calculate distance
+                            for remote in snarl.in_pin(ip).remotes.iter() {
+                                let parent_node_rect = self.stored_nodes.get(&remote.node);
+                                if let Some(parent_node) = parent_node_rect {
+                                    let dist: f32 = ((node_rect.left_center().x
+                                        - parent_node.right_center().x)
+                                        .powi(2)
+                                        + (node_rect.left_center().y
+                                            - parent_node.right_center().y)
+                                            .powi(2))
+                                    .sqrt();
+
+                                    // Calculate cost from distance
+                                    let cost = (dist.round() as i32) / 10;
+                                    costs.insert(remote.node, if cost < 1 { 1 } else { cost });
+                                }
+                            }
                         }
-                        DijkstraNode::Start => continue 'routes,
-                        DijkstraNode::Distance(_) => {
+
+                        // Update the node with all costs
+                        if !costs.is_empty() {
                             snarl.get_node_info_mut(*node_id).unwrap().value =
-                                DijkstraNode::Distance(v)
+                                DijkstraNode::Finish(costs);
                         }
                     }
                 }
@@ -358,29 +403,38 @@ impl DijkstraApp {
                 continue;
             }
 
-            // For each neighbor of the current node
-            let op = OutPinId { node, output: 0 };
+            // Process outgoing connections from all output pins
+            for output_idx in 0..10 {
+                // Check all possible output pins
+                let op = OutPinId {
+                    node,
+                    output: output_idx,
+                };
 
-            for remote in self.snarl.out_pin(op).remotes {
-                let edge_cost = match self.snarl[remote.node] {
-                    DijkstraNode::Distance(cost) => cost,
-                    DijkstraNode::Finish(ref hash_map) => {
-                        // If the node is a finish node, we need to get the cost from the hash map
-                        *hash_map.get(&node).unwrap_or(&0)
+                for remote in self.snarl.out_pin(op).remotes {
+                    let edge_cost = match &self.snarl[remote.node] {
+                        DijkstraNode::Distance(costs) => {
+                            // Get cost from the hashmap that stores costs from connected nodes
+                            *costs.get(&node).unwrap_or(&1)
+                        }
+                        DijkstraNode::Finish(hash_map) => {
+                            // If the node is a finish node, we need to get the cost from the hash map
+                            *hash_map.get(&node).unwrap_or(&0)
+                        }
+                        _ => 0, // Default cost for other node types
+                    };
+
+                    let next = State {
+                        cost: cost + edge_cost,
+                        node: remote.node,
+                    };
+
+                    // If we found a better path
+                    if next.cost < dist[&remote.node] {
+                        dist.insert(remote.node, next.cost);
+                        prev.insert(remote.node, node);
+                        priority_queue.push(next);
                     }
-                    _ => 0, // Default cost for other node types
-                };
-
-                let next = State {
-                    cost: cost + edge_cost,
-                    node: remote.node,
-                };
-
-                // If we found a better path
-                if next.cost < dist[&remote.node] {
-                    dist.insert(remote.node, next.cost);
-                    prev.insert(remote.node, node);
-                    priority_queue.push(next);
                 }
             }
         }

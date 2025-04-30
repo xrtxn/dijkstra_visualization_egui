@@ -1,0 +1,270 @@
+{
+  "nodes": {
+    "0": {
+      "value": {
+        "Distance": {
+          "1": 20,
+          "3": 29
+        }
+      },
+      "pos": {
+        "x": -46.59375,
+        "y": 105.125
+      },
+      "open": true
+    },
+    "1": {
+      "value": {
+        "Distance": {
+          "0": 30,
+          "8": 29
+        }
+      },
+      "pos": {
+        "x": -150.21875,
+        "y": -103.40625
+      },
+      "open": true
+    },
+    "3": {
+      "value": {
+        "Distance": {
+          "0": 14,
+          "4": 27
+        }
+      },
+      "pos": {
+        "x": 97.84375,
+        "y": 251.46875
+      },
+      "open": true
+    },
+    "4": {
+      "value": {
+        "Distance": {
+          "5": 19,
+          "3": 10
+        }
+      },
+      "pos": {
+        "x": 231.1875,
+        "y": 145.75
+      },
+      "open": true
+    },
+    "5": {
+      "value": {
+        "Distance": {
+          "4": 12,
+          "6": 19
+        }
+      },
+      "pos": {
+        "x": 279.65625,
+        "y": 35.46875
+      },
+      "open": true
+    },
+    "6": {
+      "value": {
+        "Distance": {
+          "7": 17,
+          "5": 18
+        }
+      },
+      "pos": {
+        "x": 291.96875,
+        "y": -116.40625
+      },
+      "open": true
+    },
+    "7": {
+      "value": {
+        "Distance": {
+          "6": 28,
+          "8": 10
+        }
+      },
+      "pos": {
+        "x": 184.82031,
+        "y": -290.20703
+      },
+      "open": true
+    },
+    "8": {
+      "value": {
+        "Distance": {
+          "1": 18,
+          "7": 34
+        }
+      },
+      "pos": {
+        "x": -39.48047,
+        "y": -287.4961
+      },
+      "open": true
+    }
+  },
+  "wires": [
+    {
+      "out_pin": {
+        "node": 3,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 0,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 6,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 5,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 0,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 1,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 1,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 0,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 7,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 6,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 6,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 7,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 1,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 8,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 8,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 7,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 5,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 4,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 7,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 8,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 4,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 3,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 8,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 1,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 5,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 6,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 0,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 3,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 3,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 4,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 4,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 5,
+        "input": 0
+      }
+    }
+  ]
+}
