@@ -11,19 +11,23 @@
     "1": {
       "value": {
         "Finish": {
-          "3": 14,
-          "2": 3
+          "7": 20,
+          "2": 24,
+          "6": 12
         }
       },
       "pos": {
-        "x": 1.671875,
-        "y": -93.875
+        "x": 190.41406,
+        "y": -196.48438
       },
       "open": true
     },
     "2": {
       "value": {
-        "Distance": 10
+        "Distance": {
+          "0": 12,
+          "3": 14
+        }
       },
       "pos": {
         "x": -114.14844,
@@ -33,11 +37,63 @@
     },
     "3": {
       "value": {
-        "Distance": 7
+        "Distance": {
+          "0": 8,
+          "4": 8
+        }
       },
       "pos": {
-        "x": -135.5,
+        "x": -105.66016,
         "y": -226.8125
+      },
+      "open": true
+    },
+    "4": {
+      "value": {
+        "Distance": {
+          "0": 9
+        }
+      },
+      "pos": {
+        "x": -215.15625,
+        "y": -290.40625
+      },
+      "open": true
+    },
+    "5": {
+      "value": {
+        "Distance": {
+          "4": 9
+        }
+      },
+      "pos": {
+        "x": -115.41797,
+        "y": -384.2539
+      },
+      "open": true
+    },
+    "6": {
+      "value": {
+        "Distance": {
+          "5": 10,
+          "3": 8
+        }
+      },
+      "pos": {
+        "x": 12.3515625,
+        "y": -306.19922
+      },
+      "open": true
+    },
+    "7": {
+      "value": {
+        "Distance": {
+          "3": 21
+        }
+      },
+      "pos": {
+        "x": 42.21875,
+        "y": -11.40625
       },
       "open": true
     }
@@ -45,17 +101,17 @@
   "wires": [
     {
       "out_pin": {
-        "node": 0,
+        "node": 3,
         "output": 0
       },
       "in_pin": {
-        "node": 3,
+        "node": 2,
         "input": 0
       }
     },
     {
       "out_pin": {
-        "node": 3,
+        "node": 2,
         "output": 0
       },
       "in_pin": {
@@ -69,13 +125,93 @@
         "output": 0
       },
       "in_pin": {
+        "node": 4,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 0,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 3,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 0,
+        "output": 0
+      },
+      "in_pin": {
         "node": 2,
         "input": 0
       }
     },
     {
       "out_pin": {
-        "node": 2,
+        "node": 4,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 3,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 3,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 6,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 5,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 6,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 4,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 5,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 7,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 1,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 3,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 7,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 6,
         "output": 0
       },
       "in_pin": {
