@@ -1,0 +1,87 @@
+{
+  "nodes": {
+    "0": {
+      "value": "Start",
+      "pos": {
+        "x": -256.66797,
+        "y": -187.95312
+      },
+      "open": true
+    },
+    "1": {
+      "value": {
+        "Finish": {
+          "3": 14,
+          "2": 3
+        }
+      },
+      "pos": {
+        "x": 1.671875,
+        "y": -93.875
+      },
+      "open": true
+    },
+    "2": {
+      "value": {
+        "Distance": 10
+      },
+      "pos": {
+        "x": -114.14844,
+        "y": -114.03516
+      },
+      "open": true
+    },
+    "3": {
+      "value": {
+        "Distance": 7
+      },
+      "pos": {
+        "x": -135.5,
+        "y": -226.8125
+      },
+      "open": true
+    }
+  },
+  "wires": [
+    {
+      "out_pin": {
+        "node": 0,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 3,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 3,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 1,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 0,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 2,
+        "input": 0
+      }
+    },
+    {
+      "out_pin": {
+        "node": 2,
+        "output": 0
+      },
+      "in_pin": {
+        "node": 1,
+        "input": 0
+      }
+    }
+  ]
+}

@@ -19,7 +19,7 @@ const NOTIFICATION_DURATION: u64 = 5;
 enum DijkstraNode {
     Start,
     Distance(i32),
-    Finish,
+    Finish(HashMap<NodeId, i32>),
 }
 
 struct DijkstraViewer {
@@ -54,8 +54,8 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
     fn title(&mut self, node: &DijkstraNode) -> String {
         match node {
             DijkstraNode::Start => "Start".to_string(),
-            DijkstraNode::Distance(cost) => format!("Distance ({})", cost),
-            DijkstraNode::Finish => "Finish".to_string(),
+            DijkstraNode::Distance(_) => "Distance".to_string(),
+            DijkstraNode::Finish(_) => "Finish".to_string(),
         }
     }
 
@@ -63,7 +63,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         match node {
             DijkstraNode::Start => 0,
             DijkstraNode::Distance(_) => 1,
-            DijkstraNode::Finish => 1,
+            DijkstraNode::Finish(_) => 1,
         }
     }
 
@@ -86,7 +86,15 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                 ui.label(format!("Cost: {:?}", values));
                 PinInfo::triangle().with_fill(color)
             }
-            _ => PinInfo::default(),
+            DijkstraNode::Finish(hash_map) => {
+                for node in self.path_nodes.iter() {
+                    if hash_map.contains_key(node) {
+                        ui.label(format!("Cost: {}", hash_map.get(node).unwrap()));
+                        break;
+                    }
+                }
+                PinInfo::default()
+            }
         }
     }
 
@@ -94,7 +102,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         match node {
             DijkstraNode::Start => 1,
             DijkstraNode::Distance(_) => 1,
-            DijkstraNode::Finish => 0,
+            DijkstraNode::Finish(_) => 0,
         }
     }
 
@@ -131,7 +139,10 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         snarl: &mut Snarl<DijkstraNode>,
     ) {
         ui.label("Add node");
-        if snarl.nodes().all(|node| *node != DijkstraNode::Start) {
+        if snarl.nodes().all(|node| match node {
+            DijkstraNode::Start => false,
+            _ => true,
+        }) {
             if ui.button("Start").clicked() {
                 snarl.insert_node(pos, DijkstraNode::Start);
                 ui.close_menu();
@@ -141,9 +152,12 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
             snarl.insert_node(pos, DijkstraNode::Distance(1));
             ui.close_menu();
         }
-        if snarl.nodes().all(|node| *node != DijkstraNode::Finish) {
+        if snarl.nodes().all(|node| match node {
+            DijkstraNode::Finish(_) => false,
+            _ => true,
+        }) {
             if ui.button("Finish").clicked() {
-                snarl.insert_node(pos, DijkstraNode::Finish);
+                snarl.insert_node(pos, DijkstraNode::Finish(HashMap::new()));
                 ui.close_menu();
             }
         }
@@ -184,7 +198,7 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                 snarl.connect(from.id, to.id);
             }
         }
-        if let (DijkstraNode::Distance(_), DijkstraNode::Finish) =
+        if let (DijkstraNode::Distance(_), DijkstraNode::Finish(_)) =
             (&snarl[from.id.node], &snarl[to.id.node])
         {
             snarl.connect(from.id, to.id);
@@ -203,26 +217,21 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
         self.stored_nodes.insert(node, graph_rect);
         if self.stored_nodes.len() == snarl.nodes().count() {
             //végig megyünk minden úton
-            for (node_id, node_rect) in self.stored_nodes.iter() {
-                match snarl[*node_id] {
-                    DijkstraNode::Start => continue,
-                    DijkstraNode::Finish => continue,
-                    _ => (),
-                }
-                let op = InPinId {
+            'routes: for (node_id, node_rect) in self.stored_nodes.iter() {
+                let ip = InPinId {
                     node: *node_id,
                     input: 0,
                 };
                 let mut v = 1;
                 // Végig megyünk minden bemeneti pin-en
-                for remote in snarl.in_pin(op).remotes {
+                for remote in snarl.in_pin(ip).remotes {
                     // Kiírjuk a távolságot
                     let parent_node_rect = self.stored_nodes.get(&remote.node);
                     if let Some(parent_node) = parent_node_rect {
                         let dist: f32 = ((node_rect.left_center().x
                             - parent_node.right_center().x)
                             .powi(2)
-                            + (node_rect.left_bottom().y - parent_node.right_center().y).powi(2))
+                            + (node_rect.left_center().y - parent_node.right_center().y).powi(2))
                         .sqrt();
                         // Beállítjuk a távolságot a csomópontban
                         v = (dist.round() as i32) / 10;
@@ -230,15 +239,28 @@ impl SnarlViewer<DijkstraNode> for DijkstraViewer {
                             v = 1;
                         }
                     }
+                    match &snarl[*node_id] {
+                        DijkstraNode::Finish(hash_map) => {
+                            // Kiírjuk a távolságot
+                            let mut new_hash_map = hash_map.clone();
+                            new_hash_map.insert(remote.node, v);
+                            snarl.get_node_info_mut(*node_id).unwrap().value =
+                                DijkstraNode::Finish(new_hash_map);
+                        }
+                        DijkstraNode::Start => continue 'routes,
+                        DijkstraNode::Distance(_) => {
+                            snarl.get_node_info_mut(*node_id).unwrap().value =
+                                DijkstraNode::Distance(v)
+                        }
+                    }
                 }
-                snarl.get_node_info_mut(*node_id).unwrap().value = DijkstraNode::Distance(v);
             }
         }
     }
 }
 
 // Priority queue element for Dijkstra's algorithm
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 struct State {
     cost: i32,
     node: NodeId,
@@ -295,7 +317,7 @@ impl DijkstraApp {
         for (node_id, node) in self.snarl.nodes_ids_data() {
             match node.value {
                 DijkstraNode::Start => start_node = Some(node_id),
-                DijkstraNode::Finish => finish_node = Some(node_id),
+                DijkstraNode::Finish(_) => finish_node = Some(node_id),
                 _ => {}
             }
         }
@@ -338,6 +360,10 @@ impl DijkstraApp {
             for remote in self.snarl.out_pin(op).remotes {
                 let edge_cost = match self.snarl[remote.node] {
                     DijkstraNode::Distance(cost) => cost,
+                    DijkstraNode::Finish(ref hash_map) => {
+                        // If the node is a finish node, we need to get the cost from the hash map
+                        *hash_map.get(&node).unwrap_or(&0)
+                    }
                     _ => 0, // Default cost for other node types
                 };
 
@@ -392,7 +418,7 @@ impl EframeApp for DijkstraApp {
                 if let Some(path) = rfd::FileDialog::new()
                     .set_file_name(".json")
                     .add_filter("JSON", &["json"])
-                    .set_directory(&std::env::current_dir().unwrap())
+                    .set_directory(&std::env::current_dir().unwrap().join("saved"))
                     .save_file()
                 {
                     std::fs::write(&path, serialized).unwrap_or_else(|err| {
@@ -405,7 +431,7 @@ impl EframeApp for DijkstraApp {
                 // Load the serialized data from a file
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("JSON", &["json"])
-                    .set_directory(&std::env::current_dir().unwrap())
+                    .set_directory(&std::env::current_dir().unwrap().join("saved"))
                     .pick_file()
                 {
                     let serialized = std::fs::read_to_string(&path).unwrap_or_else(|err| {
