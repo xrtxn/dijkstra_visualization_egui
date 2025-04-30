@@ -288,6 +288,8 @@ struct DijkstraApp {
     snarl: Snarl<DijkstraNode>,
     style: SnarlStyle,
     viewer: DijkstraViewer,
+    auto_recalc: bool,
+    total_cost: i32,
 }
 
 impl DijkstraApp {
@@ -306,6 +308,8 @@ impl DijkstraApp {
             snarl: Snarl::new(),
             style: ss,
             viewer: DijkstraViewer::new(),
+            auto_recalc: false,
+            total_cost: 1,
         }
     }
 
@@ -392,9 +396,8 @@ impl DijkstraApp {
                 path.insert(0, current);
             }
 
-            let total_cost = dist[&finish];
-            self.viewer
-                .add_success_notification(format!("Path found! Total cost: {}", total_cost));
+            self.total_cost = dist[&finish];
+
             Ok(path)
         } else {
             Err("No path found".to_string())
@@ -471,16 +474,36 @@ impl EframeApp for DijkstraApp {
                 match self.run_dijkstra() {
                     Ok(path) => {
                         self.viewer.path_nodes = path;
+                        self.viewer.add_success_notification(format!(
+                            "Path found! Total cost: {}",
+                            self.total_cost
+                        ));
                     }
                     Err(err) => {
                         self.viewer.add_error_notification(err);
                     }
                 }
             }
+            if ui
+                .button(format!("Auto recalc - {}", self.auto_recalc))
+                .clicked()
+            {
+                self.auto_recalc = !self.auto_recalc;
+            }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             self.snarl.show(&mut self.viewer, &self.style, "salty", ui);
         });
+
+        if self.auto_recalc {
+            self.viewer.path_nodes.clear();
+            match self.run_dijkstra() {
+                Ok(path) => {
+                    self.viewer.path_nodes = path;
+                }
+                Err(_) => {}
+            }
+        }
     }
 }
 
